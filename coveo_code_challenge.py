@@ -1,10 +1,12 @@
-from flask import Flask, request, jsonify
 import re
+import os
 import csv
+import json
+
+from flask import Flask, request, jsonify
 from pymongo import MongoClient
 from vincenty import vincenty
-import json
-import os
+
 
 app = Flask(__name__)
 
@@ -19,6 +21,7 @@ def index():
 
     """
     return '<h2>Hello There!</h2>'
+
 
 @app.route('/suggestions')
 def suggestions(methods=['GET']):
@@ -35,12 +38,14 @@ def suggestions(methods=['GET']):
     data = request.args.get('q')
     if not data:
         return "<h3>Input format:</h3><b><br /></b><h4>'/suggestions?q={\"name\":\"city_name\"}'</h4><br / ><h4>or</h4><br /><h4>'/suggestions?q={\"name\":\"city_name\",\"lat\":\"latitude_number\",\"long\":\"longitude_number\"}'</h4>"
+
     name = get_required_parameter('name', data)
-    latitude = get_optional_parameter('lat', data, default_value=0)
-    longitude = get_optional_parameter('long', data, default_value=0)
+    latitude = get_optional_parameter('lat', data, default_value=False)
+    longitude = get_optional_parameter('long', data, default_value=False)
     regex = fuzzy_matching(name)
     raw_suggestions = read_data(regex)
-    if latitude != 0 and longitude != 0:
+
+    if latitude != False and longitude != False:
         raw_suggestions = read_data(regex, input_latitude=latitude, input_longitude=longitude)
 
     suggested_cities = proportion_of_input_string_in_suggested_city_name(name, raw_suggestions)
@@ -74,11 +79,9 @@ def fuzzy_matching(input_string):
         :rtype: regex_object
 
     """
-    input_string = input_string.title()
-    pattern = '.*?'.join(input_string)
-    input_regex = re.compile(pattern)
+    pattern = '.*?'.join(input_string.title())
+    return re.compile(pattern)
 
-    return input_regex
 
 def read_data(input_regex, input_latitude=False, input_longitude=False):
 
@@ -99,7 +102,7 @@ def read_data(input_regex, input_latitude=False, input_longitude=False):
 
     if input_latitude and input_longitude:
         data = collection.find({"name":input_regex}, {"name":1, "lat":1, "long":1, "_id":0})
-        return calculate_the_nearnest_3_cities(input_latitude, input_longitude, data)
+        return calculate_the_nearest_3_cities(input_latitude, input_longitude, data)
     else:
         data = collection.find({"name":input_regex}, {"name":1, "lat":1, "long":1, "population":1, "_id":0})
         return calculate_3_biggest_cities(data)
@@ -111,7 +114,7 @@ def calculate_3_biggest_cities(suggested_data):
         get most suggested cities based on population of the potiential matched cities
 
         :param: suggested_data list of dictionary of the matched cities info
-        :return the dictionary of dictionary of cities with the largest population
+        :return the dictionary of dictionary of cities with the largest population (3 max)
         :rtype: dict of dict
 
     """
@@ -132,7 +135,7 @@ def calculate_3_biggest_cities(suggested_data):
     return ret_dict
 
 
-def calculate_the_nearnest_3_cities(input_latitude, input_longitude, suggested_data):
+def calculate_the_nearest_3_cities(input_latitude, input_longitude, suggested_data):
 
     """
         get most suggested cities based on vincenty distance of the potiential matched cities
@@ -188,37 +191,36 @@ def get_required_parameter(param_name, data):
     """
         :param: string of parameter's name
         :param: data from get request
-        :retrun: input partial city name
+        :return: input partial city name
         :rtype: unicode
 
     """
 
-    data = json.loads(data)
-    if param_name not in data:
+    raw_data = json.loads(data)
+    if param_name not in raw_data:
         raise Exception('Error, Parameter \'%s\' is required for this call!' % (param_name))
 
-    value = data[param_name]
+    value = raw_data[param_name]
 
     if value == '':
         raise Exception('Error, Parameter \'%s\' is required for this call!' % (param_name))
 
-    value = unicode(value)
 
-    return value
+    return unicode(value)
 
-def get_optional_parameter(param_name, data, default_value=0.0):
+def get_optional_parameter(param_name, data, default_value=False):
 
     """
         :param: string of parameter's name
         :param: data from get request
-        :retrun: input lattitue value and longtitude value or default value 0.0
+        :retrun: input lattitue value and longtitude value or default value
         :rtype: float
 
     """
-    data = json.loads(data)
+    raw_data = json.loads(data)
     value = default_value
-    if param_name in data:
-        value = float(data[param_name])
+    if param_name in raw_data:
+        value = float(raw_data[param_name])
 
     return value
 
